@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#6f1d1b" />
+  <meta name="description" content="نظام عضوية مأتم الغسرة" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <title>نظام عضوية مأتم الغسرة</title>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>مأتم الغسرة</h1>
+      <p>نظام العضوية والمواقيت</p>
+    </div>
+    <button id="installBtn" class="ghost hidden">تثبيت التطبيق</button>
+  </header>
+
+  <main class="container">
+    <section id="homePage" class="page active">
+      <div class="page-title">
+        <div>
+          <h2>الرئيسية</h2>
+          <p>نظرة سريعة على بيانات النظام</p>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <article class="stat-card">
+          <span>إجمالي الأعضاء</span>
+          <strong id="membersCount">0</strong>
+        </article>
+        <article class="stat-card">
+          <span>الأعضاء النشطون</span>
+          <strong id="activeMembersCount">0</strong>
+        </article>
+        <article class="stat-card">
+          <span>المواقيت القادمة</span>
+          <strong id="upcomingCount">0</strong>
+        </article>
+        <article class="stat-card">
+          <span>آخر نسخة احتياطية</span>
+          <strong id="lastBackup">لا توجد</strong>
+        </article>
+      </div>
+
+      <div class="panel">
+        <h3>إجراءات سريعة</h3>
+        <div class="quick-actions">
+          <button data-open-member class="primary">إضافة عضو</button>
+          <button data-open-timing class="secondary">إضافة موعد</button>
+          <button id="exportBackup" class="outline">تنزيل نسخة احتياطية</button>
+          <label class="outline file-label">
+            استعادة نسخة
+            <input type="file" id="importBackup" accept=".json,application/json" />
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>أقرب المواقيت</h3>
+        <div id="homeUpcomingList" class="list empty-state">لا توجد مواقيت قادمة.</div>
+      </div>
+    </section>
+
+    <section id="membersPage" class="page">
+      <div class="page-title">
+        <div>
+          <h2>الأعضاء</h2>
+          <p>إضافة الأعضاء والبحث في السجل</p>
+        </div>
+        <button data-open-member class="primary">عضو جديد</button>
+      </div>
+
+      <div class="toolbar">
+        <input id="memberSearch" type="search" placeholder="ابحث بالاسم أو الهاتف أو رقم العضوية" />
+        <select id="memberFilter">
+          <option value="all">جميع الحالات</option>
+          <option value="active">نشط</option>
+          <option value="inactive">غير نشط</option>
+        </select>
+      </div>
+      <div id="membersList" class="cards-list empty-state">لا توجد بيانات أعضاء حتى الآن.</div>
+    </section>
+
+    <section id="timingsPage" class="page">
+      <div class="page-title">
+        <div>
+          <h2>المواقيت</h2>
+          <p>إدارة المواعيد والفعاليات</p>
+        </div>
+        <button data-open-timing class="primary">موعد جديد</button>
+      </div>
+      <div class="toolbar">
+        <input id="timingSearch" type="search" placeholder="ابحث في عنوان الموعد أو نوع المناسبة" />
+        <select id="timingFilter">
+          <option value="all">جميع المواقيت</option>
+          <option value="upcoming">القادمة</option>
+          <option value="past">السابقة</option>
+        </select>
+      </div>
+      <div id="timingsList" class="cards-list empty-state">لا توجد مواقيت مسجلة.</div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="التنقل الرئيسي">
+    <button class="nav-item active" data-page="homePage"><span>⌂</span>الرئيسية</button>
+    <button class="nav-item" data-page="membersPage"><span>👥</span>الأعضاء</button>
+    <button class="nav-item" data-page="timingsPage"><span>🕒</span>المواقيت</button>
+  </nav>
+
+  <dialog id="memberDialog">
+    <form id="memberForm" method="dialog" class="modal-card">
+      <div class="modal-head">
+        <h3>بيانات العضو</h3>
+        <button type="button" class="icon-btn" data-close-dialog="memberDialog">×</button>
+      </div>
+      <input type="hidden" id="memberId" />
+      <label>الاسم الكامل
+        <input id="memberName" required />
+      </label>
+      <label>رقم الهاتف
+        <input id="memberPhone" inputmode="tel" />
+      </label>
+      <label>رقم العضوية
+        <input id="membershipNumber" />
+      </label>
+      <label>الحالة
+        <select id="memberStatus">
+          <option value="active">نشط</option>
+          <option value="inactive">غير نشط</option>
+        </select>
+      </label>
+      <label>ملاحظات
+        <textarea id="memberNotes" rows="3"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="outline" data-close-dialog="memberDialog">إلغاء</button>
+        <button type="submit" class="primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="timingDialog">
+    <form id="timingForm" method="dialog" class="modal-card">
+      <div class="modal-head">
+        <h3>بيانات الموعد</h3>
+        <button type="button" class="icon-btn" data-close-dialog="timingDialog">×</button>
+      </div>
+      <input type="hidden" id="timingId" />
+      <label>عنوان الموعد
+        <input id="timingTitle" required />
+      </label>
+      <label>نوع المناسبة
+        <input id="timingType" placeholder="مثال: مجلس، اجتماع، فعالية" />
+      </label>
+      <label>التاريخ والوقت
+        <input id="timingDate" type="datetime-local" required />
+      </label>
+      <label>المكان
+        <input id="timingLocation" />
+      </label>
+      <label>ملاحظات
+        <textarea id="timingNotes" rows="3"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="outline" data-close-dialog="timingDialog">إلغاء</button>
+        <button type="submit" class="primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="./js/db.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,711 @@
+import React, { useState, useEffect } from 'react';
+import { Download, Upload, Mail, Cloud, Plus, Trash2, Edit2, Save, X, Eye, EyeOff } from 'lucide-react';
+
+const MembershipSystem = () => {
+  const [members, setMembers] = useState([]);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showBackup, setShowBackup] = useState(false);
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    phone: '',
+    email: '',
+    type: 'عادية',
+    joinDate: new Date().toISOString().split('T')[0],
+    subscriptionDate: new Date().toISOString().split('T')[0],
+    amount: '',
+    paymentMethod: 'كاش',
+    status: 'نشطة',
+    notes: ''
+  });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stats, setStats] = useState({
+    totalMembers: 0,
+    activeMembers: 0,
+    revenue: 0,
+    ordinaryCount: 0,
+    activeCount: 0
+  });
+  const [backupPassword, setBackupPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('جاهز');
+
+  // تهيئة IndexedDB
+  const initDB = async () => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('MembershipDB', 1);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+      
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('members')) {
+          const store = db.createObjectStore('members', { keyPath: 'id' });
+          store.createIndex('name', 'name', { unique: false });
+          store.createIndex('status', 'status', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('backups')) {
+          db.createObjectStore('backups', { keyPath: 'timestamp' });
+        }
+      };
+    });
+  };
+
+  // تحميل البيانات من IndexedDB
+  const loadMembers = async () => {
+    try {
+      const db = await initDB();
+      const transaction = db.transaction(['members'], 'readonly');
+      const store = transaction.objectStore('members');
+      
+      return new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+    } catch (error) {
+      console.error('خطأ في تحميل البيانات:', error);
+      return [];
+    }
+  };
+
+  // حفظ العضو في IndexedDB
+  const saveMember = async (member) => {
+    try {
+      const db = await initDB();
+      const transaction = db.transaction(['members'], 'readwrite');
+      const store = transaction.objectStore('members');
+      
+      return new Promise((resolve, reject) => {
+        const request = store.put(member);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+    } catch (error) {
+      console.error('خطأ في حفظ العضو:', error);
+    }
+  };
+
+  // حذف العضو من IndexedDB
+  const deleteMemberDB = async (id) => {
+    try {
+      const db = await initDB();
+      const transaction = db.transaction(['members'], 'readwrite');
+      const store = transaction.objectStore('members');
+      
+      return new Promise((resolve, reject) => {
+        const request = store.delete(id);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+      });
+    } catch (error) {
+      console.error('خطأ في حذف العضو:', error);
+    }
+  };
+
+  // حفظ نسخة احتياطية
+  const saveBackup = async (backupData) => {
+    try {
+      const db = await initDB();
+      const transaction = db.transaction(['backups'], 'readwrite');
+      const store = transaction.objectStore('backups');
+      
+      const backup = {
+        timestamp: new Date().getTime(),
+        date: new Date().toLocaleString('ar-SA'),
+        data: backupData,
+        password: backupPassword ? btoa(backupPassword) : ''
+      };
+      
+      return new Promise((resolve, reject) => {
+        const request = store.add(backup);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(backup);
+      });
+    } catch (error) {
+      console.error('خطأ في حفظ النسخة الاحتياطية:', error);
+    }
+  };
+
+  // تحميل البيانات عند بدء التطبيق
+  useEffect(() => {
+    loadAndUpdateMembers();
+    registerServiceWorker();
+  }, []);
+
+  const loadAndUpdateMembers = async () => {
+    const data = await loadMembers();
+    setMembers(data);
+    updateStats(data);
+  };
+
+  // تسجيل Service Worker
+  const registerServiceWorker = async () => {
+    if ('serviceWorker' in navigator) {
+      try {
+        await navigator.serviceWorker.register(
+          'data:application/javascript;base64,' + btoa(`
+            const CACHE_NAME = 'membership-v1';
+            const urlsToCache = [
+              '/',
+              '/index.html',
+              '/manifest.json'
+            ];
+
+            self.addEventListener('install', event => {
+              event.waitUntil(
+                caches.open(CACHE_NAME).then(cache => {
+                  return cache.addAll(urlsToCache);
+                })
+              );
+            });
+
+            self.addEventListener('fetch', event => {
+              event.respondWith(
+                caches.match(event.request).then(response => {
+                  return response || fetch(event.request).catch(() => {
+                    return new Response('Offline - data not available');
+                  });
+                })
+              );
+            });
+          `)
+        );
+      } catch (error) {
+        console.error('خطأ في تسجيل Service Worker:', error);
+      }
+    }
+  };
+
+  // تحديث الإحصائيات
+  const updateStats = (data) => {
+    const active = data.filter(m => m.status === 'نشطة').length;
+    const revenue = data.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0);
+    const ordinary = data.filter(m => m.type === 'عادية').length;
+    const activeMembers = data.filter(m => m.type === 'فاعلة').length;
+
+    setStats({
+      totalMembers: data.length,
+      activeMembers: active,
+      revenue: revenue,
+      ordinaryCount: ordinary,
+      activeCount: activeMembers
+    });
+  };
+
+  // إضافة/تعديل عضو
+  const handleAddMember = async () => {
+    if (!formData.name || !formData.phone) {
+      alert('الرجاء ملء الحقول المطلوبة');
+      return;
+    }
+
+    const member = {
+      id: formData.id || 'M' + new Date().getTime(),
+      ...formData,
+      amount: parseFloat(formData.amount) || 0
+    };
+
+    await saveMember(member);
+    
+    if (formData.id) {
+      setMembers(members.map(m => m.id === member.id ? member : m));
+    } else {
+      setMembers([...members, member]);
+    }
+
+    updateStats(formData.id ? members.map(m => m.id === member.id ? member : m) : [...members, member]);
+    resetForm();
+  };
+
+  // حذف عضو
+  const handleDeleteMember = async (id) => {
+    if (window.confirm('هل أنت متأكد من حذف هذا العضو؟')) {
+      await deleteMemberDB(id);
+      const updated = members.filter(m => m.id !== id);
+      setMembers(updated);
+      updateStats(updated);
+    }
+  };
+
+  // تحرير عضو
+  const handleEditMember = (member) => {
+    setFormData(member);
+    setShowForm(true);
+  };
+
+  // إعادة تعيين النموذج
+  const resetForm = () => {
+    setFormData({
+      id: '',
+      name: '',
+      phone: '',
+      email: '',
+      type: 'عادية',
+      joinDate: new Date().toISOString().split('T')[0],
+      subscriptionDate: new Date().toISOString().split('T')[0],
+      amount: '',
+      paymentMethod: 'كاش',
+      status: 'نشطة',
+      notes: ''
+    });
+    setShowForm(false);
+  };
+
+  // تنزيل النسخة الاحتياطية
+  const handleDownloadBackup = async () => {
+    setSyncStatus('جاري التحميل...');
+    const backup = await saveBackup(members);
+    
+    const dataStr = JSON.stringify({
+      ...backup,
+      version: '1.0',
+      exportDate: new Date().toLocaleString('ar-SA')
+    }, null, 2);
+
+    const element = document.createElement('a');
+    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(dataStr));
+    element.setAttribute('download', `backup-${new Date().getTime()}.json`);
+    element.style.display = 'none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+
+    setSyncStatus('تم التحميل بنجاح');
+    setTimeout(() => setSyncStatus('جاهز'), 3000);
+  };
+
+  // تحميل من نسخة احتياطية
+  const handleRestoreBackup = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const backup = JSON.parse(e.target.result);
+        
+        if (backupPassword && backup.password !== btoa(backupPassword)) {
+          alert('كلمة المرور غير صحيحة');
+          return;
+        }
+
+        const restoredMembers = Array.isArray(backup.data) ? backup.data : backup.data?.members || [];
+        
+        for (const member of restoredMembers) {
+          await saveMember(member);
+        }
+
+        setMembers(restoredMembers);
+        updateStats(restoredMembers);
+        alert('تم استعادة البيانات بنجاح');
+        setSyncStatus('تم الاستعادة');
+      } catch (error) {
+        alert('خطأ في استعادة البيانات: ' + error.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // إرسال عبر بريد إلكتروني
+  const handleEmailBackup = () => {
+    setSyncStatus('جاري الإعداد...');
+    const backup = {
+      version: '1.0',
+      exportDate: new Date().toLocaleString('ar-SA'),
+      members: members,
+      stats: stats
+    };
+
+    const mailBody = `
+تقرير النسخة الاحتياطية لنظام عضويات مأتم الغسرة
+=====================================
+
+إجمالي الأعضاء: ${stats.totalMembers}
+الأعضاء النشطون: ${stats.activeMembers}
+إجمالي الإيرادات: ${stats.revenue.toLocaleString('ar-SA')} ريال
+
+البيانات المرفقة بصيغة JSON
+
+تاريخ النسخة: ${backup.exportDate}
+    `;
+
+    const mailLink = `mailto:?subject=نسخة احتياطية من نظام العضويات&body=${encodeURIComponent(mailBody)}`;
+    window.location.href = mailLink;
+
+    setSyncStatus('تم إعداد البريد');
+    setTimeout(() => setSyncStatus('جاهز'), 3000);
+  };
+
+  // البحث والفرز
+  const filteredMembers = members.filter(member => 
+    member.name.includes(searchTerm) || 
+    member.phone.includes(searchTerm) ||
+    member.email.includes(searchTerm)
+  );
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: '#f8f9fa', direction: 'rtl' }}>
+      {/* رأس التطبيق */}
+      <header className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-4 shadow-lg">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-2xl font-bold">📋 نظام عضويات مأتم الغسرة</h1>
+          <p className="text-blue-100 text-sm mt-1">نظام متقدم لإدارة العضويات والاشتراكات</p>
+        </div>
+      </header>
+
+      {/* الإحصائيات */}
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto p-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <div className="text-2xl font-bold text-blue-700">{stats.totalMembers}</div>
+              <div className="text-xs text-blue-600">إجمالي الأعضاء</div>
+            </div>
+            <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+              <div className="text-2xl font-bold text-green-700">{stats.activeMembers}</div>
+              <div className="text-xs text-green-600">نشطون</div>
+            </div>
+            <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+              <div className="text-2xl font-bold text-purple-700">{stats.ordinaryCount}</div>
+              <div className="text-xs text-purple-600">عضوية عادية</div>
+            </div>
+            <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+              <div className="text-2xl font-bold text-orange-700">{stats.activeCount}</div>
+              <div className="text-xs text-orange-600">عضوية فاعلة</div>
+            </div>
+            <div className="bg-pink-50 p-3 rounded-lg border border-pink-200">
+              <div className="text-2xl font-bold text-pink-700">{stats.revenue.toLocaleString('ar-SA')}</div>
+              <div className="text-xs text-pink-600">الإيرادات</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* الأزرار العلوية */}
+      <div className="bg-white border-b">
+        <div className="max-w-6xl mx-auto p-4">
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+            >
+              <Plus size={18} /> إضافة عضو جديد
+            </button>
+            <button
+              onClick={() => setShowBackup(!showBackup)}
+              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+            >
+              💾 النسخ الاحتياطية
+            </button>
+            <div className="text-sm text-gray-500 flex items-center">
+              {syncStatus}
+            </div>
+          </div>
+
+          {/* نقسم النسخ الاحتياطية */}
+          {showBackup && (
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
+              <h3 className="font-bold mb-3 text-gray-800">إدارة النسخ الاحتياطية</h3>
+              
+              {/* كلمة المرور */}
+              <div className="mb-3">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">كلمة المرور (اختيارية)</label>
+                <div className="flex gap-2">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={backupPassword}
+                    onChange={(e) => setBackupPassword(e.target.value)}
+                    placeholder="أدخل كلمة مرور لحماية النسخة الاحتياطية"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="p-2 hover:bg-gray-200 rounded-lg"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* الخيارات */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <button
+                  onClick={handleDownloadBackup}
+                  className="flex items-center justify-center gap-2 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition text-sm"
+                >
+                  <Download size={16} /> تحميل
+                </button>
+                <label className="flex items-center justify-center gap-2 bg-green-500 text-white px-3 py-2 rounded-lg hover:bg-green-600 transition cursor-pointer text-sm">
+                  <Upload size={16} /> استعادة
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleRestoreBackup}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  onClick={handleEmailBackup}
+                  className="flex items-center justify-center gap-2 bg-purple-500 text-white px-3 py-2 rounded-lg hover:bg-purple-600 transition text-sm"
+                >
+                  <Mail size={16} /> بريد
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 bg-gray-500 text-white px-3 py-2 rounded-lg hover:bg-gray-600 transition text-sm"
+                  title="قريباً: مزامنة سحابية"
+                >
+                  <Cloud size={16} /> سحابة
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 mt-3">💡 تلميح: احفظ نسخة احتياطية منتظمة لضمان عدم فقدان البيانات</p>
+            </div>
+          )}
+
+          {/* البحث */}
+          <input
+            type="text"
+            placeholder="ابحث بالاسم أو الهاتف أو البريد..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
+      {/* نموذج إضافة/تعديل عضو */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end z-50">
+          <div className="bg-white w-full max-h-[90vh] overflow-y-auto rounded-t-2xl p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">
+                {formData.id ? '✏️ تعديل العضو' : '➕ إضافة عضو جديد'}
+              </h2>
+              <button onClick={resetForm} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* الاسم */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">الاسم *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* رقم الهاتف */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">رقم الهاتف *</label>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* البريد الإلكتروني */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">البريد الإلكتروني</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* نوع العضوية */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">نوع العضوية</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({...formData, type: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option>عادية</option>
+                  <option>فاعلة</option>
+                </select>
+              </div>
+
+              {/* تاريخ الانضمام */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">تاريخ الانضمام</label>
+                <input
+                  type="date"
+                  value={formData.joinDate}
+                  onChange={(e) => setFormData({...formData, joinDate: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* تاريخ الاشتراك */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">تاريخ الاشتراك</label>
+                <input
+                  type="date"
+                  value={formData.subscriptionDate}
+                  onChange={(e) => setFormData({...formData, subscriptionDate: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* المبلغ */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">المبلغ (ريال)</label>
+                <input
+                  type="number"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* طريقة الدفع */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">طريقة الدفع</label>
+                <select
+                  value={formData.paymentMethod}
+                  onChange={(e) => setFormData({...formData, paymentMethod: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option>كاش</option>
+                  <option>تحويل بنكي</option>
+                  <option>بطاقة ائتمان</option>
+                  <option>شيك</option>
+                </select>
+              </div>
+
+              {/* الحالة */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">حالة العضوية</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({...formData, status: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option>نشطة</option>
+                  <option>معلقة</option>
+                  <option>منتهية</option>
+                </select>
+              </div>
+            </div>
+
+            {/* الملاحظات */}
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">ملاحظات</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                rows="3"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* الأزرار */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleAddMember}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold"
+              >
+                <Save size={18} /> حفظ
+              </button>
+              <button
+                onClick={resetForm}
+                className="flex-1 bg-gray-400 text-white px-4 py-2 rounded-lg hover:bg-gray-500 transition font-semibold"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* قائمة الأعضاء */}
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          {filteredMembers.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <p className="text-lg">لا توجد بيانات متطابقة</p>
+              <p className="text-sm">ابدأ بإضافة عضو جديد</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-100 border-b">
+                  <tr>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">الاسم</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">الهاتف</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">النوع</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">الحالة</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">المبلغ</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMembers.map((member) => (
+                    <tr key={member.id} className="border-b hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 text-gray-800">{member.name}</td>
+                      <td className="px-4 py-3 text-gray-600">{member.phone}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-sm font-semibold ${
+                          member.type === 'عادية' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'
+                        }`}>
+                          {member.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-sm font-semibold ${
+                          member.status === 'نشطة' ? 'bg-green-100 text-green-700' :
+                          member.status === 'معلقة' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {member.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-gray-800">
+                        {member.amount.toLocaleString('ar-SA')} ر.س
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEditMember(member)}
+                            className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition"
+                            title="تعديل"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMember(member.id)}
+                            className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition"
+                            title="حذف"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* التذييل */}
+      <footer className="bg-gray-800 text-gray-300 p-4 mt-8 text-center text-sm">
+        <p>© 2024 نظام إدارة عضويات مأتم الغسرة | تطبيق ويب متقدم | يعمل بدون إنترنت ✅</p>
+      </footer>
+    </div>
+  );
+};
+
+export default MembershipSystem;
